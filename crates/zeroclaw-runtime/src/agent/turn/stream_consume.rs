@@ -706,6 +706,7 @@ mod tests {
                                 input_tokens: Some(10),
                                 output_tokens: Some(5),
                                 cached_input_tokens: None,
+                                cache_creation_input_tokens: None,
                             })),
                             1,
                         )),
@@ -1588,6 +1589,7 @@ mod tests {
             input_tokens: Some(412),
             output_tokens: Some(15),
             cached_input_tokens: Some(50),
+            cache_creation_input_tokens: None,
         };
         let provider = VisibleOutputThenRefusalProvider {
             refusal: zeroclaw_api::model_provider::ModelRefusalError {
