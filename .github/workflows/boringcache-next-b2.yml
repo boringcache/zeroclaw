@@ -11,7 +11,8 @@ name: Next B2 - first-class Cargo vs Swatinem
 #      good Rust results came from. marty-core and bingle_rust used first-class
 #      Cargo, driving the build through `boringcache cargo`.
 #
-# So this run switches the BoringCache arm to mode: cargo and takes three
+# So this run switches the BoringCache arm to the action's first-class Rust
+# inputs (cache-cargo, cache-target, sccache via the proxy) and takes three
 # samples per arm. Swatinem is still the comparator because it is what
 # ZeroClaw's own .github/actions/rust-cache falls back to; their production path
 # is useblacksmith/rust-cache on Blacksmith's sticky disk, which a fork cannot
@@ -83,14 +84,18 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: sccache@0.17.0
-      - name: Run first-class Cargo
+      - name: Cache Cargo registry and target with BoringCache
         uses: boringcache/one@v1
         with:
-          mode: cargo
+          cache-cargo: true
+          cache-target: true
+          sccache: true
+          sccache-mode: proxy
           trust-policy: publish
           diagnostics: summary
           fail-on-cache-error: true
-      - run: boringcache cargo --write --skip-restore check --locked -p zeroclaw-runtime
+      - run: cargo fetch --locked
+      - run: cargo check --locked -p zeroclaw-runtime
 
   head-swatinem:
     name: Head - Swatinem
@@ -141,17 +146,21 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: sccache@0.17.0
-      - name: Run first-class Cargo
+      - name: Cache Cargo registry and target with BoringCache
         uses: boringcache/one@v1
         with:
-          mode: cargo
+          cache-cargo: true
+          cache-target: true
+          sccache: true
+          sccache-mode: proxy
           trust-policy: restore
           diagnostics: summary
           fail-on-cache-error: true
+      - run: cargo fetch --locked
       - name: Timed compilation
         run: |
           start=$(date +%s)
-          boringcache cargo --read-only --skip-restore check --locked -p zeroclaw-runtime
+          cargo check --locked -p zeroclaw-runtime
           echo "elapsed=$(( $(date +%s) - start ))" >> "$GITHUB_ENV"
       - name: Report
         if: always()
