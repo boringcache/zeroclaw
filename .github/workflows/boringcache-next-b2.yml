@@ -36,7 +36,7 @@ on:
         description: Commit built on the restored state
         type: string
         required: true
-        default: b8489219ec255b1aaa1ca707b243a5c6b7ed9303
+        default: 0b1a715c72e5b4305d4903b54cb73b1718ca8552
 
 permissions:
   contents: read
@@ -110,6 +110,8 @@ jobs:
         with:
           ref: ${{ inputs.source_head }}
           persist-credentials: false
+      - name: Mark start
+        run: echo "started=$(date +%s)" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: next-b2-${{ inputs.source_base }}
@@ -117,9 +119,8 @@ jobs:
       - run: cargo fetch --locked
       - name: Timed compilation
         run: |
-          start=$(date +%s)
           cargo check --locked -p zeroclaw-runtime
-          echo "elapsed=$(( $(date +%s) - start ))" >> "$GITHUB_ENV"
+          echo "elapsed=$(( $(date +%s) - started ))" >> "$GITHUB_ENV"
       - name: Report
         if: always()
         run: |
