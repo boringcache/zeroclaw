@@ -1,0 +1,157 @@
+name: Next A - sccache on a warm target
+
+# Question this answers: in ZeroClaw's real shape, where every Blacksmith job
+# already restores a target directory, how much compilation is left for a shared
+# compiler cache to serve?
+#
+# PR 10154's A/B (and our repeat of it) used a fresh target directory in every
+# job, which isolates sccache but is not how their CI runs. Here all three jobs
+# use a warm target restored from the same seed, and only the source changes.
+#
+#   seed-target        build the base commit, save the target cache
+#   target-only        build the head commit on that warm target, no sccache
+#   target-and-sccache build the head commit on that warm target, sccache
+#                      restore-only from BoringCache
+#
+# target-only minus target-and-sccache is sccache's marginal value on top of a
+# warm target across a real source change. If that delta is near zero, a shared
+# compiler cache is not the commercial wedge for them.
+#
+# The BoringCache objects being read were published by the base-commit seed in
+# run 35317808307. This workflow does not publish, so it measures reuse only.
+#
+# Both measured jobs pin CARGO_INCREMENTAL=0 so the arms match: boringcache/one
+# sets it, and an unset value in the other arm would be a second variable.
+
+on:
+  push:
+    branches:
+      - boringcache-validation
+    paths:
+      - '.github/workflows/boringcache-next-a.yml'
+
+  workflow_dispatch:
+    inputs:
+      source_base:
+        description: Commit whose build warms the target cache
+        type: string
+        required: true
+        default: 0861df2aea84a7b60d219ec21d77e6b49c971844
+      source_head:
+        description: Commit built on the warm target
+        type: string
+        required: true
+        default: b8489219ec255b1aaa1ca707b243a5c6b7ed9303
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.source_base }}-${{ inputs.source_head }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  seed-target:
+    name: Seed the warm target
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_base }}
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: next-a-${{ inputs.source_base }}
+          save-if: true
+
+      - run: cargo fetch --locked
+
+      - name: Build the base commit
+        run: cargo check --locked -p zeroclaw-runtime
+
+  target-only:
+    name: Warm target, no sccache
+    needs: seed-target
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_head }}
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: next-a-${{ inputs.source_base }}
+          save-if: false
+
+      - run: cargo fetch --locked
+
+      - name: Timed compilation
+        run: |
+          start=$(date +%s)
+          cargo check --locked -p zeroclaw-runtime
+          echo "target_only_seconds=$(( $(date +%s) - start ))" >> "$GITHUB_ENV"
+
+      - name: Report
+        if: always()
+        run: |
+          echo "Warm target, no sccache: ${target_only_seconds}s"
+
+  target-and-sccache:
+    name: Warm target plus BoringCache sccache
+    needs: seed-target
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_head }}
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: next-a-${{ inputs.source_base }}
+          save-if: false
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+        with:
+          version: v0.17.0
+
+      - name: Restore compiler objects from BoringCache
+        uses: boringcache/one@v1
+        with:
+          trust-policy: restore
+          mode: sccache
+          diagnostics: summary
+          fail-on-cache-error: true
+
+      - run: cargo fetch --locked
+
+      - name: Zero sccache counters
+        run: sccache --zero-stats
+
+      - name: Timed compilation
+        env:
+          RUSTC_WRAPPER: sccache
+        run: |
+          start=$(date +%s)
+          cargo check --locked -p zeroclaw-runtime
+          echo "target_sccache_seconds=$(( $(date +%s) - start ))" >> "$GITHUB_ENV"
+
+      - name: Report
+        if: always()
+        run: |
+          echo "Warm target plus sccache: ${target_sccache_seconds}s"
+          sccache --show-stats
