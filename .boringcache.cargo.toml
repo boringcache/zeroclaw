@@ -1,0 +1,22 @@
+workspace = "boringcache/zeroclaw"
+
+# `boringcache cargo` takes the command it runs from [adapters.cargo].command,
+# not from a workflow input. Without this section the adapter is invoked with
+# nothing to execute and fails with "received an empty command".
+[entries.cargo-target]
+kind = "cargo-target"
+tag = "zeroclaw-cargo-target"
+path = "target"
+
+[profiles.cargo]
+entries = ["cargo-registry-cache", "cargo-registry-index", "cargo-git-db", "cargo-target"]
+
+[adapters.cargo]
+profiles = ["cargo"]
+command = ["cargo", "check", "--locked", "-p", "zeroclaw-runtime"]
+compiler-cache = "sccache"
+fail-on-cache-error = true
+
+[adapters.sccache]
+tag = "zeroclaw-rust"
+fail-on-cache-error = true
