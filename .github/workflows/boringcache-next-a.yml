@@ -53,6 +53,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  BORINGCACHE_DEFAULT_WORKSPACE: boringcache/zeroclaw
 
 jobs:
   seed-target:
