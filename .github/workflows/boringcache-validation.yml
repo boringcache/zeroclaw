@@ -1,0 +1,134 @@
+name: BoringCache validation
+
+# Repeats the sequential seed-to-reader A/B from
+# zeroclaw-labs/zeroclaw#10154 (comment 5367171642) with BoringCache as the
+# sccache backend instead of GitHub's cache service.
+#
+# The maintainer's acceptance criteria for a replacement are, verbatim: zero
+# write errors, nonzero reader hits, and a lower warm-reader duration in the
+# same sequential test. The seed and the reader below build the same source SHA
+# with a fresh target directory, and dependency fetching finishes before the
+# timed command so the measured duration isolates compilation.
+#
+# The original control ran on a GitHub-hosted runner (125 s seed, 125 s reader)
+# alongside Blacksmith (80 s / 95 s). A fork cannot use the Blacksmith pool, so
+# both jobs here run on ubuntu-latest and compare against the GitHub-hosted
+# control, not the Blacksmith numbers.
+
+on:
+  push:
+    branches:
+      - boringcache-validation
+    paths:
+      - '.github/workflows/boringcache-validation.yml'
+
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Exact ZeroClaw commit to build
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.source_ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTC_WRAPPER: sccache
+
+jobs:
+  seed:
+    name: Cold seed
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+        with:
+          version: v0.17.0
+
+      - name: Cache Rust compilation with BoringCache
+        uses: boringcache/one@v1
+        with:
+          trust-policy: publish
+          mode: sccache
+          diagnostics: summary
+          fail-on-cache-error: true
+
+      - name: Fetch dependencies before the timed command
+        run: cargo fetch --locked
+
+      - name: Zero sccache counters
+        run: sccache --zero-stats
+
+      - name: Timed compilation
+        run: |
+          start=$(date +%s)
+          cargo check --locked -p zeroclaw-runtime
+          echo "seed_seconds=$(( $(date +%s) - start ))" >> "$GITHUB_ENV"
+
+      - name: Show sccache stats
+        if: always()
+        run: |
+          echo "Timed compilation: ${seed_seconds}s"
+          sccache --show-stats
+
+  reader:
+    name: Warm reader
+    needs: seed
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+        with:
+          version: v0.17.0
+
+      - name: Restore Rust compilation from BoringCache
+        uses: boringcache/one@v1
+        with:
+          trust-policy: restore
+          mode: sccache
+          diagnostics: summary
+          fail-on-cache-error: true
+
+      - name: Fetch dependencies before the timed command
+        run: cargo fetch --locked
+
+      - name: Zero sccache counters
+        run: sccache --zero-stats
+
+      - name: Timed compilation
+        run: |
+          start=$(date +%s)
+          cargo check --locked -p zeroclaw-runtime
+          echo "reader_seconds=$(( $(date +%s) - start ))" >> "$GITHUB_ENV"
+
+      - name: Show sccache stats
+        if: always()
+        run: |
+          echo "Timed compilation: ${reader_seconds}s"
+          sccache --show-stats

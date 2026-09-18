@@ -1,0 +1,4 @@
+workspace = "boringcache/zeroclaw"
+
+[adapters.sccache]
+tag = "zeroclaw-runtime-check"
