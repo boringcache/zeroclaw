@@ -38,6 +38,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  BORINGCACHE_DEFAULT_WORKSPACE: boringcache/zeroclaw
   RUSTC_WRAPPER: sccache
 
 jobs:
