@@ -1,0 +1,26 @@
+workspace = "boringcache/zeroclaw"
+
+[adapters.sccache]
+tag = "zeroclaw-runtime-check"
+
+# Next B holds the Cargo state itself rather than the compiler objects, so it
+# can be compared against Swatinem/rust-cache, the GitHub-hosted stand-in for
+# Blacksmith's sticky disk.
+[entries.cargo-registry-cache]
+path = "/home/runner/.cargo/registry/cache"
+tag = "zeroclaw-cargo-registry-cache"
+
+[entries.cargo-registry-index]
+path = "/home/runner/.cargo/registry/index"
+tag = "zeroclaw-cargo-registry-index"
+
+[entries.cargo-git-db]
+path = "/home/runner/.cargo/git/db"
+tag = "zeroclaw-cargo-git-db"
+
+[entries.runtime-target]
+path = "target"
+tag = "zeroclaw-runtime-target"
+
+[profiles.next-b]
+entries = ["cargo-registry-cache", "cargo-registry-index", "cargo-git-db", "runtime-target"]

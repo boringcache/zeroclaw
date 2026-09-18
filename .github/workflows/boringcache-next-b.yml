@@ -1,0 +1,158 @@
+name: Next B - who holds the Cargo state
+
+# Next A showed that with a warm target directory only about 54 rustc
+# invocations remain, and serving them from a shared compiler cache does not
+# reduce wall time. So the remaining question is not whether to add a compiler
+# cache alongside their target cache, but whether BoringCache can hold the
+# Cargo state itself, portably, as well as the runner vendor's own disk does.
+#
+# Swatinem/rust-cache is the GitHub-hosted stand-in for Blacksmith's sticky
+# disk: it is what ZeroClaw's own .github/actions/rust-cache falls back to when
+# CI_USE_BLACKSMITH is not true. This is a like-for-like storage comparison on
+# one runner class, not a claim about Blacksmith's disk itself, which a fork
+# cannot exercise.
+#
+#   seed-swatinem     build base, save target + registry via Swatinem
+#   seed-boringcache  build base, publish target + registry via BoringCache
+#   head-swatinem     build head on the Swatinem-restored state, timed
+#   head-boringcache  build head on the BoringCache-restored state, timed
+#
+# Each arm restores before cargo fetch, so the registry restore lands in an
+# empty destination. The head checkout replaces the branch's cache plan, so the
+# plan is re-fetched from the branch before the cache step runs.
+
+on:
+  push:
+    branches:
+      - boringcache-validation
+    paths:
+      - '.github/workflows/boringcache-next-b.yml'
+
+  workflow_dispatch:
+    inputs:
+      source_base:
+        description: Commit whose build seeds both caches
+        type: string
+        required: true
+        default: 0861df2aea84a7b60d219ec21d77e6b49c971844
+      source_head:
+        description: Commit built on the restored state
+        type: string
+        required: true
+        default: b8489219ec255b1aaa1ca707b243a5c6b7ed9303
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.source_base }}-${{ inputs.source_head }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  BORINGCACHE_DEFAULT_WORKSPACE: boringcache/zeroclaw
+  PLAN_URL: https://raw.githubusercontent.com/boringcache/zeroclaw/boringcache-validation/.boringcache.next-b.toml
+
+jobs:
+  seed-swatinem:
+    name: Seed - Swatinem
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_base }}
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: next-b-${{ inputs.source_base }}
+          save-if: true
+      - run: cargo fetch --locked
+      - run: cargo check --locked -p zeroclaw-runtime
+
+  seed-boringcache:
+    name: Seed - BoringCache
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_base }}
+          persist-credentials: false
+      - name: Restore the cache plan the checkout replaced
+        run: curl -fsSL -o .boringcache.toml "$PLAN_URL"
+      - name: Cache Cargo state with BoringCache
+        uses: boringcache/one@v1
+        with:
+          mode: archive
+          cache-profiles: next-b
+          trust-policy: publish
+          diagnostics: summary
+          fail-on-cache-error: true
+      - run: cargo fetch --locked
+      - run: cargo check --locked -p zeroclaw-runtime
+
+  head-swatinem:
+    name: Head - Swatinem restore
+    needs: seed-swatinem
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_head }}
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: next-b-${{ inputs.source_base }}
+          save-if: false
+      - run: cargo fetch --locked
+      - name: Timed compilation
+        run: |
+          start=$(date +%s)
+          cargo check --locked -p zeroclaw-runtime
+          echo "swatinem_seconds=$(( $(date +%s) - start ))" >> "$GITHUB_ENV"
+      - name: Report
+        if: always()
+        run: |
+          echo "Swatinem restore, head build: ${swatinem_seconds}s"
+
+  head-boringcache:
+    name: Head - BoringCache restore
+    needs: seed-boringcache
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_head }}
+          persist-credentials: false
+      - name: Restore the cache plan the checkout replaced
+        run: curl -fsSL -o .boringcache.toml "$PLAN_URL"
+      - name: Restore Cargo state from BoringCache
+        uses: boringcache/one@v1
+        with:
+          mode: archive
+          cache-profiles: next-b
+          trust-policy: restore
+          diagnostics: summary
+          fail-on-cache-error: true
+      - run: cargo fetch --locked
+      - name: Timed compilation
+        run: |
+          start=$(date +%s)
+          cargo check --locked -p zeroclaw-runtime
+          echo "boringcache_seconds=$(( $(date +%s) - start ))" >> "$GITHUB_ENV"
+      - name: Report
+        if: always()
+        run: |
+          echo "BoringCache restore, head build: ${boringcache_seconds}s"
