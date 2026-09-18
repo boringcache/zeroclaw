@@ -1,0 +1,159 @@
+name: Next B2 - first-class Cargo vs Swatinem
+
+# Next B compared Swatinem against BoringCache archive mode and read 61s vs 78s.
+# That comparison does not hold up for two reasons found afterwards:
+#
+#   1. Both cold seeds compiled the identical 310 units and still landed 28s
+#      apart (1m15s vs 1m43s), so runner variance on this workload is larger
+#      than the 17s gap being reported. One sample per arm proves nothing.
+#   2. Archive mode tars a target directory. It did not break cargo freshness -
+#      both head arms rebuilt the same 13 units - but it is not the path the
+#      good Rust results came from. marty-core and bingle_rust used first-class
+#      Cargo, driving the build through `boringcache cargo`.
+#
+# So this run switches the BoringCache arm to mode: cargo and takes three
+# samples per arm. Swatinem is still the comparator because it is what
+# ZeroClaw's own .github/actions/rust-cache falls back to; their production path
+# is useblacksmith/rust-cache on Blacksmith's sticky disk, which a fork cannot
+# exercise and which this does not measure.
+
+on:
+  push:
+    branches:
+      - boringcache-validation
+    paths:
+      - '.github/workflows/boringcache-next-b2.yml'
+
+  workflow_dispatch:
+    inputs:
+      source_base:
+        description: Commit whose build seeds both caches
+        type: string
+        required: true
+        default: 0861df2aea84a7b60d219ec21d77e6b49c971844
+      source_head:
+        description: Commit built on the restored state
+        type: string
+        required: true
+        default: b8489219ec255b1aaa1ca707b243a5c6b7ed9303
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.source_base }}-${{ inputs.source_head }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  BORINGCACHE_DEFAULT_WORKSPACE: boringcache/zeroclaw
+
+jobs:
+  seed-swatinem:
+    name: Seed - Swatinem
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_base }}
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: next-b2-${{ inputs.source_base }}
+          save-if: true
+      - run: cargo fetch --locked
+      - run: cargo check --locked -p zeroclaw-runtime
+
+  seed-cargo:
+    name: Seed - first-class Cargo
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_base }}
+          persist-credentials: false
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: sccache@0.17.0
+      - name: Run first-class Cargo
+        uses: boringcache/one@v1
+        with:
+          mode: cargo
+          trust-policy: publish
+          diagnostics: summary
+          fail-on-cache-error: true
+      - run: boringcache cargo --write --skip-restore check --locked -p zeroclaw-runtime
+
+  head-swatinem:
+    name: Head - Swatinem
+    needs: seed-swatinem
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        sample: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_head }}
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: next-b2-${{ inputs.source_base }}
+          save-if: false
+      - run: cargo fetch --locked
+      - name: Timed compilation
+        run: |
+          start=$(date +%s)
+          cargo check --locked -p zeroclaw-runtime
+          echo "elapsed=$(( $(date +%s) - start ))" >> "$GITHUB_ENV"
+      - name: Report
+        if: always()
+        run: |
+          echo "RESULT swatinem sample=${{ matrix.sample }} seconds=${elapsed}"
+
+  head-cargo:
+    name: Head - first-class Cargo
+    needs: seed-cargo
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        sample: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_head }}
+          persist-credentials: false
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: sccache@0.17.0
+      - name: Run first-class Cargo
+        uses: boringcache/one@v1
+        with:
+          mode: cargo
+          trust-policy: restore
+          diagnostics: summary
+          fail-on-cache-error: true
+      - name: Timed compilation
+        run: |
+          start=$(date +%s)
+          boringcache cargo --read-only --skip-restore check --locked -p zeroclaw-runtime
+          echo "elapsed=$(( $(date +%s) - start ))" >> "$GITHUB_ENV"
+      - name: Report
+        if: always()
+        run: |
+          echo "RESULT cargo sample=${{ matrix.sample }} seconds=${elapsed}"
