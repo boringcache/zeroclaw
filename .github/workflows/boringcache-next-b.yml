@@ -34,12 +34,12 @@ on:
         description: Commit whose build seeds both caches
         type: string
         required: true
-        default: 0861df2aea84a7b60d219ec21d77e6b49c971844
+        default: 4d2e880b8dfeda2d7a268e8727378acc0d047ee3
       source_head:
         description: Commit built on the restored state
         type: string
         required: true
-        default: b8489219ec255b1aaa1ca707b243a5c6b7ed9303
+        default: f42b095d991756b0dc4c9f696066e16bb029d111
 
 permissions:
   contents: read
@@ -88,7 +88,7 @@ jobs:
       - name: Restore the cache plan the checkout replaced
         run: curl -fsSL -o .boringcache.toml "$PLAN_URL"
       - name: Cache Cargo state with BoringCache
-        uses: boringcache/one@v1
+        uses: boringcache/one@476c7df90bc1e7c2c4066aa7eb31cc057ef7f8d1 # v1.32.0
         with:
           mode: archive
           cache-profiles: next-b
@@ -139,7 +139,7 @@ jobs:
       - name: Restore the cache plan the checkout replaced
         run: curl -fsSL -o .boringcache.toml "$PLAN_URL"
       - name: Restore Cargo state from BoringCache
-        uses: boringcache/one@v1
+        uses: boringcache/one@476c7df90bc1e7c2c4066aa7eb31cc057ef7f8d1 # v1.32.0
         with:
           mode: archive
           cache-profiles: next-b

@@ -5,7 +5,7 @@ workspace = "boringcache/zeroclaw"
 # nothing to execute and fails with "received an empty command".
 [entries.cargo-target]
 kind = "cargo-target"
-tag = "zeroclaw-cargo-target"
+tag = "zeroclaw-cargo-target-20260923"
 path = "target"
 
 [profiles.cargo]
@@ -18,5 +18,5 @@ compiler-cache = "sccache"
 fail-on-cache-error = true
 
 [adapters.sccache]
-tag = "zeroclaw-rust"
+tag = "zeroclaw-rust-20260923"
 fail-on-cache-error = true

@@ -31,12 +31,12 @@ on:
         description: Commit whose build seeds both caches
         type: string
         required: true
-        default: 0861df2aea84a7b60d219ec21d77e6b49c971844
+        default: 4d2e880b8dfeda2d7a268e8727378acc0d047ee3
       source_head:
         description: Commit built on the restored state
         type: string
         required: true
-        default: 0b1a715c72e5b4305d4903b54cb73b1718ca8552
+        default: f42b095d991756b0dc4c9f696066e16bb029d111
 
 permissions:
   contents: read
@@ -84,13 +84,11 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: sccache@0.17.0
-      # v1.30.1 pinned by SHA: the same action build marty-core's first-class
-      # Cargo validation used. On v1 (1.30.4) a standalone mode: cargo step
-      # fails with "must execute Cargo directly; received an empty command".
+      # Keep the action and its default CLI version fixed for this comparison.
       - name: Restore the cache plan the checkout replaced
         run: curl -fsSL -o .boringcache.toml "https://raw.githubusercontent.com/boringcache/zeroclaw/boringcache-validation/.boringcache.cargo.toml"
       - name: Run first-class Cargo
-        uses: boringcache/one@404b744a2053da4cf963f13f615f7fafe94f3cf7 # v1.30.1
+        uses: boringcache/one@476c7df90bc1e7c2c4066aa7eb31cc057ef7f8d1 # v1.32.0
         with:
           mode: cargo
           trust-policy: publish
@@ -151,7 +149,7 @@ jobs:
       - name: Mark start
         run: echo "started=$(date +%s)" >> "$GITHUB_ENV"
       - name: Run first-class Cargo
-        uses: boringcache/one@404b744a2053da4cf963f13f615f7fafe94f3cf7 # v1.30.1
+        uses: boringcache/one@476c7df90bc1e7c2c4066aa7eb31cc057ef7f8d1 # v1.32.0
         with:
           mode: cargo
           trust-policy: restore
