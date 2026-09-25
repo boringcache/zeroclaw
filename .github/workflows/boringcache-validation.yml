@@ -43,7 +43,7 @@ env:
 
 jobs:
   seed:
-    name: Cold seed
+    name: Publish current source
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -52,13 +52,25 @@ jobs:
       id-token: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source_ref }}
           persist-credentials: false
 
+      - name: Checkout the validation plan
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .validation-plan
+          sparse-checkout: .boringcache.toml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Select the validation plan
+        run: cp .validation-plan/.boringcache.toml .boringcache.toml
+
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba
         with:
           version: v0.17.0
 
@@ -98,13 +110,25 @@ jobs:
       id-token: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source_ref }}
           persist-credentials: false
 
+      - name: Checkout the validation plan
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .validation-plan
+          sparse-checkout: .boringcache.toml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Select the validation plan
+        run: cp .validation-plan/.boringcache.toml .boringcache.toml
+
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba
         with:
           version: v0.17.0
 
